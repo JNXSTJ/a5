@@ -50,7 +50,58 @@ class NMT(nn.Module):
         self.vocab = vocab
 
         ### COPY OVER YOUR CODE FROM ASSIGNMENT 4
+        # default values
+        self.encoder = None
+        self.decoder = None
+        self.h_projection = None
+        self.c_projection = None
+        self.att_projection = None
+        self.combined_output_projection = None
+        self.target_vocab_projection = None
+        self.dropout = None
+        # For sanity check only, not relevant to implementation
+        self.gen_sanity_check = False
+        self.counter = 0
 
+        # This attribute added by TaoJian
+        self.word_embed_size = word_embed_size
+        # YOUR CODE HERE (~8 Lines)
+        # TODO - Initialize the following variables:
+        # self.encoder (Bidirectional LSTM with bias)
+        # self.decoder (LSTM Cell with bias)
+        # self.h_projection (Linear Layer with no bias), called W_{h} in the PDF.
+        # self.c_projection (Linear Layer with no bias), called W_{c} in the PDF.
+        # self.att_projection (Linear Layer with no bias), called W_{attProj} in the PDF.
+        # self.combined_output_projection (Linear Layer with no bias), called W_{u} in the PDF.
+        # self.target_vocab_projection (Linear Layer with no bias), called W_{vocab} in the PDF.
+        # self.dropout (Dropout Layer)
+        ###
+        # Use the following docs to properly initialize these variables:
+        # LSTM:
+        # https://pytorch.org/docs/stable/nn.html#torch.nn.LSTM
+        # LSTM Cell:
+        # https://pytorch.org/docs/stable/nn.html#torch.nn.LSTMCell
+        # Linear Layer:
+        # https://pytorch.org/docs/stable/nn.html#torch.nn.Linear
+        # Dropout Layer:
+        # https://pytorch.org/docs/stable/nn.html#torch.nn.Dropout
+
+        self.encoder = nn.LSTM(input_size=self.word_embed_size,
+                               hidden_size=self.hidden_size, bias=True, bidirectional=True)
+        self.decoder = nn.LSTMCell(
+            self.word_embed_size + self.hidden_size, self.hidden_size, bias=True)
+        self.h_projection = nn.Linear(
+            2 * self.hidden_size, self.hidden_size, bias=False)
+        self.c_projection = nn.Linear(
+            2 * self.hidden_size, self.hidden_size, bias=False)
+        self.att_projection = nn.Linear(
+            2 * self.hidden_size, self.hidden_size, bias=False)
+        self.combined_output_projection = nn.Linear(
+            3 * self.hidden_size, self.hidden_size, bias=False)
+        self.target_vocab_projection = nn.Linear(
+            self.hidden_size, self.vocab.tgt.__len__(), bias=False)
+        self.dropout = nn.Dropout(self.dropout_rate, inplace=False)
+        # END YOUR CODE
         ### END YOUR CODE FROM ASSIGNMENT 4
 
         if not no_char_decoder:
@@ -73,6 +124,10 @@ class NMT(nn.Module):
         source_lengths = [len(s) for s in source]
 
         # Convert list of lists into tensors
+        target_padded = self.vocab.tgt.to_input_tensor(target, device=self.device)
+
+        source_padded_chars = self.model_embeddings_source(source)
+        target_padded_chars = self.model_embeddings_target(target)
 
         ### YOUR CODE HERE for part 1i
         ### TODO:
@@ -82,7 +137,24 @@ class NMT(nn.Module):
         ###     - Add `source_padded_chars` for character level padded encodings for source
         ###     - Add `target_padded_chars` for character level padded encodings for target
         ###     - Modify calls to encode() and decode() to use the character level encodings
+        # Convert list of lists into tensors
+        # source_padded = self.vocab.src.to_input_tensor(
+        #   source, device=self.device)  # Tensor: (src_len, b)
+        # target_padded = self.vocab.tgt.to_input_tensor(
+        #    target, device=self.device)  # Tensor: (tgt_len, b)
 
+        # Run the network forward:
+        # 1. Apply the encoder to `source_padded` by calling `self.encode()`
+        # 2. Generate sentence masks for `source_padded` by calling `self.generate_sent_masks()`
+        # 3. Apply the decoder to compute combined-output by calling `self.decode()`
+        # 4. Compute log probability distribution over the target vocabulary using the
+        # combined_outputs returned by the `self.decode()` function.
+
+        enc_hiddens, dec_init_state = self.encode(
+            source_padded_chars, source_lengths)
+        enc_masks = self.generate_sent_masks(enc_hiddens, source_lengths)
+        combined_outputs = self.decode(
+            enc_hiddens, enc_masks, dec_init_state, target_padded)
         ### END YOUR CODE
 
         P = F.log_softmax(self.target_vocab_projection(combined_outputs), dim=-1)
